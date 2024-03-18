@@ -1,0 +1,82 @@
+Program.Sub.Preflight.Start
+Variable.Global.iBIRunID.Declare(Long,0)
+Variable.Global.iBILogID.Declare(Long,0)
+Variable.Global.iBIRptID.Declare(Long,0)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author: Brandon Medina
+'Customer: Genesis Inc
+'ARC: 6328
+'Modifications to Sales order label (they'll be using it as a shipping label)
+'Preprocessor for BI RptID 53
+
+F.Intrinsic.Control.Try
+	
+	V.Local.sError.Declare
+	V.Local.sOrder.Declare
+	V.Local.sSql.Declare
+	V.Local.sRet.Declare
+
+	'If just shipping label is selected
+	f.Intrinsic.Control.If(v.passed.calling-pgm,<>,"ORD0FSLZ")
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+
+	V.Passed.CANCEL.Set(1)
+	
+	'shipment no passed from BI
+	v.Local.sorder.Set(v.Passed.BIP_SHIPNO)
+	F.Intrinsic.String.Split(V.Local.sOrder,"##",v.Local.sOrder)
+	
+	'set passed shipping label report id
+	V.Global.iBIRptID.Set(v.Passed.009001)
+	'V.Global.iBIRptID.Set("53")
+	
+	'Get run ID
+	F.Global.BI.GetRunID(V.Global.iBIRunID)
+	
+	'Starting BI Logging
+	F.Global.BI.StartLogging(V.Global.iBIRunID,v.Global.iBIRptID,-1,"",V.Global.iBILogID)
+	
+	'open connection
+	F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+	'tables currently in this query (for adding fields later)
+	'V_BOL_PACK_DTL PDT
+	'V_SHIPMENT_HEADER SH 
+	'V_SHIPMENT_SHIPTO ST 
+	'V_CUSTOMER_MASTER CM 
+	''V_INVENTORY_MST2 I2
+	''V_CUST_FORM_INFO CFI
+	
+	'V_SHIPMENT_LINES SL
+	
+	'create data table
+	F.Intrinsic.String.Build("SELECT Distinct PDT.ORDER_NO as SO, PDT.ORDER_SEQ, LEFT(PDT.ORDER_LINE,3) as SO_LINE, PDT.PART, PDT.LOCN, PDT.PART_DESC, PDT.CRTN_NO, SH.CUSTOMER_PO, PDT.QTY, ST.NAME_CUSTOMER_SHIP as SHIP_NAME, PDT.PCK_NO, PDT.BIN, PDT.CUST_PART, PDT.HEAT, PDT.LBS_PER_PC, PDT.LOT, PDT.PLLT_NO, PDT.SEQ, PDT.SERIAL, PDT.WAYBILL_NO, SH.CARTONS, SH.CUSTOMER, CM.NAME_CUSTOMER, CM.ADDRESS1, CM.ADDRESS2, CM.CITY, CM.STATE, CM.ZIP, CM.COUNTRY, SH.DATE_DUE, SH.DATE_SHIPPED as SHIP_DATE, SH.FACILITY, ST.ADDRESS_1_SHIP as SHIP_ADDRS1, ST.ADDRESS_2_SHIP as SHIP_ADDRS2, ST.ADDRESS_3_SHIP as SHIP_ADDRS3, ST.ADDRESS_4_SHIP as SHIP_ADDRS4, ST.ADDRESS_5_SHIP as SHIP_ADDRS5, ST.ATTENTION_SHIP, ST.CITY_SHIP as SHIP_CITY, ST.STATE_SHIP as SHIP_STATE, ST.CODE_ZIP_SHIP as SHIP_ZIP, SL.QTY_SHIPPED as QTY_ON_LABEL FROM V_BOL_PACK_DTL AS PDT LEFT JOIN V_SHIPMENT_HEADER AS SH ON PDT.ORDER_NO = SH.ORDER_NO AND PDT.ORDER_SEQ = SH.ORDER_SUFFIX LEFT JOIN V_SHIPMENT_LINES AS SL ON SH.ORDER_NO = SL.ORDER_NO AND SH.ORDER_SUFFIX = SL.ORDER_SUFFIX and SH.SHIP_ID = SL.SHIP_ID LEFT JOIN V_SHIPMENT_SHIPTO AS ST ON SH.ORDER_NO = ST.ORDER_NO AND SH.ORDER_SUFFIX = ST.ORDER_SUFFIX AND SH.SHIP_ID = ST.SHIP_ID LEFT JOIN V_CUSTOMER_MASTER AS CM ON SH.CUSTOMER = CM.CUSTOMER where PDT.PCK_NO = '{0}' ORDER BY PDT.ORDER_NO, PDT.ORDER_SEQ, PDT.ORDER_LINE, PDT.CRTN_NO",V.Local.sOrder,V.Local.sSql)
+	'F.Intrinsic.String.Build("SELECT PDT.ORDER_NO, PDT.ORDER_SEQ, LEFT(PDT.ORDER_LINE,3) as ORDER_LINE, PDT.PART, PDT.LOCN, PDT.PART_DESC, I2.TEXT_INFO1, I2.TEXT_INFO2, I2.DESCRIPTION_2, I2.DESCRIPTION_3, PDT.CRTN_NO, SH.CUSTOMER_PO, PDT.QTY, ST.NAME_CUSTOMER_SHIP, PDT.PCK_NO, PDT.BIN, PDT.CUST_PART, PDT.HEAT, PDT.LBS_PER_PC, PDT.LOT, PDT.PLLT_NO, PDT.SEQ, PDT.SERIAL, PDT.WAYBILL_NO, SH.CARTONS, SH.CUSTOMER, CM.NAME_CUSTOMER, CM.ADDRESS1, CM.ADDRESS2, CM.CITY, CM.STATE, CM.ZIP, CM.COUNTRY, SH.DATE_DUE, SH.DATE_SHIPPED, SH.FACILITY, CFI.EXTERNAL_ID, ST.ADDRESS_1_SHIP, ST.ADDRESS_2_SHIP, ST.ADDRESS_3_SHIP, ST.ADDRESS_4_SHIP, ST.ADDRESS_5_SHIP, ST.ATTENTION_SHIP, ST.CITY_SHIP, ST.STATE_SHIP, ST.CODE_ZIP_SHIP FROM V_BOL_PACK_DTL AS PDT LEFT JOIN V_SHIPMENT_HEADER AS SH ON PDT.ORDER_NO = SH.ORDER_NO AND PDT.ORDER_SEQ = SH.ORDER_SUFFIX LEFT JOIN V_SHIPMENT_SHIPTO AS ST ON SH.ORDER_NO = ST.ORDER_NO AND SH.ORDER_SUFFIX = ST.ORDER_SUFFIX AND SH.SHIP_ID = ST.SHIP_ID LEFT JOIN V_CUSTOMER_MASTER AS CM ON SH.CUSTOMER = CM.CUSTOMER LEFT JOIN V_INVENTORY_MST2 AS I2 ON PDT.PART = I2.PART AND PDT.LOCN = I2.LOCATION LEFT JOIN V_CUST_FORM_INFO CFI ON CFI.CUSTOMER = CM.CUSTOMER WHERE  PDT.PCK_NO = '{0}' ORDER BY PDT.ORDER_NO, PDT.ORDER_SEQ, PDT.ORDER_LINE, PDT.CRTN_NO",V.Local.sOrder,V.Local.sSql)
+	
+	f.Data.DataTable.CreateFromSQL("LABEL","CONX",V.Local.sSql,True)
+	
+	'stop logging
+	f.Global.BI.StopLogging(v.Global.iBILogID)
+	
+	'print
+	f.Global.BI.PrintCodesoftLabelFromDataTable(v.Global.iBIRunID,v.Global.iBILogID,"LABEL","",True)
+	
+	F.ODBC.Connection!conx.Close
+	
+	F.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Concat("Project: GCG_6328_OE_ShipLab_53.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_4799_OE_ShipLab_53$}$DFINCH$}$12/4/2017 3:28:44 PM$}$False
+${$5$}$2.0.0.0$}$2
+${$6$}$bmedina$}$20210915151117253$}$kOipCrsyLBVj2KoSwkcdK23ChxGVcBlE1sgf+ykExHo/R+p0ddxvW5wz8T8HBRUMQ9tO1cVtW98=
+Program.Sub.Comments.End
+
